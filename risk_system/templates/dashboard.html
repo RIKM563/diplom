@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} — Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">RS</div>
+                <div>
+                    <h1>{{ title }}</h1>
+                    <p>Версия {{ version }}</p>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <a href="#healthSection">Статус API</a>
+                <a href="#trainSection">Обучение</a>
+                <a href="#assessSection">Оценка риска</a>
+                <a href="#optimizeSection">Подбор мер</a>
+                <a href="#latestSection">Последний результат</a>
+                <a href="/about">О системе</a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="/docs" target="_blank">Swagger</a>
+                <a href="/health" target="_blank">Health</a>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <section class="hero">
+                <div>
+                    <h2>Система автоматизации анализа и оценки рисков ИБ</h2>
+                    <p>
+                        Веб-интерфейс для обучения модели, оценки рисков, анализа результатов
+                        и подбора мер защиты для корпоративных систем банка.
+                    </p>
+                </div>
+                <div class="hero-actions">
+                    <button id="checkHealthBtn" type="button">Проверить API</button>
+                    <button id="latestBtnHero" type="button" class="secondary">Получить последний результат</button>
+                </div>
+            </section>
+
+            <section id="healthSection" class="panel">
+                <div class="panel-header">
+                    <div class="title-with-help">
+                        <div>
+                            <h3>Статус API</h3>
+                            <p>Проверка доступности backend и корректности базового ответа сервиса.</p>
+                        </div>
+                        <span class="help-icon" data-tooltip="Кнопка проверяет endpoint /health. Если API доступен, система готова принимать запросы на обучение, оценку риска и оптимизацию.">?</span>
+                    </div>
+                    <span id="apiStatusBadge" class="status-badge neutral">Не проверено</span>
+                </div>
+                <pre id="healthResult" class="result-box">Нажми «Проверить API»</pre>
+            </section>
+
+            <section id="trainSection" class="panel">
+                <div class="panel-header">
+                    <div class="title-with-help">
+                        <div>
+                            <h3>Обучение модели</h3>
+                            <p>Загрузка и запуск JSON для endpoint <code>/train</code>.</p>
+                        </div>
+                        <span class="help-icon" data-tooltip="Обучение нужно для построения модели, которая оценивает вероятность реализации угроз на основе входных признаков. Сначала обычно запускают именно этот блок.">?</span>
+                    </div>
+                </div>
+
+                <div class="toolbar">
+                    <input id="trainFileInput" type="file" accept=".json">
+                    <button id="loadTrainFileBtn" type="button" class="secondary">Загрузить файл</button>
+                    <button id="trainSampleBtn" type="button" class="secondary">Вставить пример</button>
+                    <button id="formatTrainBtn" type="button" class="secondary">Форматировать JSON</button>
+                    <button id="validateTrainBtn" type="button" class="secondary">Проверить JSON</button>
+                    <button id="clearTrainBtn" type="button" class="secondary">Очистить</button>
+                    <button id="saveTrainBtn" type="button" class="secondary">Сохранить локально</button>
+                    <button id="exportTrainResultBtn" type="button" class="secondary">Скачать результат</button>
+                </div>
+
+                <div id="trainDropzone" class="dropzone">
+                    Перетащи сюда JSON-файл для <code>/train</code> или используй кнопку загрузки
+                </div>
+
+                <textarea id="trainPayload" class="payload-box" spellcheck="false" placeholder="Вставь JSON для /train"></textarea>
+
+                <div class="action-row">
+                    <button id="trainBtn" type="button">Запустить /train</button>
+                </div>
+
+                <div class="summary-grid" id="trainSummary"></div>
+                <pre id="trainResult" class="result-box"></pre>
+            </section>
+
+            <section id="assessSection" class="panel">
+                <div class="panel-header">
+                    <div class="title-with-help">
+                        <div>
+                            <h3>Оценка риска</h3>
+                            <p>Загрузка и запуск JSON для endpoint <code>/assess</code>.</p>
+                        </div>
+                        <span class="help-icon" data-tooltip="Этот блок выполняет расчет вероятностей угроз, ущерба, критичности, итогового риска и класса риска для событий, узлов и активов.">?</span>
+                    </div>
+                </div>
+
+                <div class="toolbar">
+                    <input id="assessFileInput" type="file" accept=".json">
+                    <button id="loadAssessFileBtn" type="button" class="secondary">Загрузить файл</button>
+                    <button id="assessSampleBtn" type="button" class="secondary">Вставить пример</button>
+                    <button id="formatAssessBtn" type="button" class="secondary">Форматировать JSON</button>
+                    <button id="validateAssessBtn" type="button" class="secondary">Проверить JSON</button>
+                    <button id="clearAssessBtn" type="button" class="secondary">Очистить</button>
+                    <button id="saveAssessBtn" type="button" class="secondary">Сохранить локально</button>
+                    <button id="exportAssessResultBtn" type="button" class="secondary">Скачать результат</button>
+                </div>
+
+                <div id="assessDropzone" class="dropzone">
+                    Перетащи сюда JSON-файл для <code>/assess</code>
+                </div>
+
+                <textarea id="assessPayload" class="payload-box" spellcheck="false" placeholder="Вставь JSON для /assess"></textarea>
+
+                <div class="action-row">
+                    <button id="assessBtn" type="button">Запустить /assess</button>
+                </div>
+
+                <div class="summary-grid" id="assessSummary"></div>
+
+                <div class="tabs">
+                    <button class="tab-button active" data-target="assessJsonView">JSON</button>
+                    <button class="tab-button" data-target="eventsView">События</button>
+                    <button class="tab-button" data-target="nodesView">Узлы</button>
+                    <button class="tab-button" data-target="assetsView">Активы</button>
+                    <button class="tab-button" data-target="assessExplanationsView">Объяснения</button>
+                </div>
+
+                <div id="assessJsonView" class="tab-content active">
+                    <pre id="assessResult" class="result-box"></pre>
+                </div>
+
+                <div id="eventsView" class="tab-content">
+                    <div id="eventsTableContainer" class="table-container"></div>
+                </div>
+
+                <div id="nodesView" class="tab-content">
+                    <div id="nodesTableContainer" class="table-container"></div>
+                </div>
+
+                <div id="assetsView" class="tab-content">
+                    <div id="assetsTableContainer" class="table-container"></div>
+                </div>
+
+                <div id="assessExplanationsView" class="tab-content">
+                    <div id="assessExplanationsContainer" class="explanation-list"></div>
+                </div>
+            </section>
+
+            <section id="optimizeSection" class="panel">
+                <div class="panel-header">
+                    <div class="title-with-help">
+                        <div>
+                            <h3>Подбор мер защиты</h3>
+                            <p>Загрузка и запуск JSON для endpoint <code>/optimize</code>.</p>
+                        </div>
+                        <span class="help-icon" data-tooltip="Оптимизация помогает выбрать набор мер защиты при ограничениях по бюджету, трудозатратам, времени и числу мер.">?</span>
+                    </div>
+                </div>
+
+                <div class="toolbar">
+                    <input id="optimizeFileInput" type="file" accept=".json">
+                    <button id="loadOptimizeFileBtn" type="button" class="secondary">Загрузить файл</button>
+                    <button id="optimizeSampleBtn" type="button" class="secondary">Вставить пример</button>
+                    <button id="formatOptimizeBtn" type="button" class="secondary">Форматировать JSON</button>
+                    <button id="validateOptimizeBtn" type="button" class="secondary">Проверить JSON</button>
+                    <button id="clearOptimizeBtn" type="button" class="secondary">Очистить</button>
+                    <button id="saveOptimizeBtn" type="button" class="secondary">Сохранить локально</button>
+                    <button id="exportOptimizeResultBtn" type="button" class="secondary">Скачать результат</button>
+                </div>
+
+                <div id="optimizeDropzone" class="dropzone">
+                    Перетащи сюда JSON-файл для <code>/optimize</code>
+                </div>
+
+                <textarea id="optimizePayload" class="payload-box" spellcheck="false" placeholder="Вставь JSON для /optimize"></textarea>
+
+                <div class="action-row">
+                    <button id="optimizeBtn" type="button">Запустить /optimize</button>
+                </div>
+
+                <div class="summary-grid" id="optimizeSummary"></div>
+                <div id="optimizeExplanationContainer" class="explanation-box"></div>
+                <div id="optimizeTableContainer" class="table-container"></div>
+                <pre id="optimizeResult" class="result-box"></pre>
+            </section>
+
+            <section id="latestSection" class="panel">
+                <div class="panel-header">
+                    <div class="title-with-help">
+                        <div>
+                            <h3>Последний результат</h3>
+                            <p>Получение последнего сохраненного результата расчета риска.</p>
+                        </div>
+                        <span class="help-icon" data-tooltip="Этот блок возвращает последний ответ backend по endpoint /latest. Удобно для повторного просмотра предыдущей оценки без повторного запуска.">?</span>
+                    </div>
+                    <div class="toolbar compact">
+                        <button id="latestBtn" type="button">Запросить /latest</button>
+                        <button id="exportLatestResultBtn" type="button" class="secondary">Скачать результат</button>
+                    </div>
+                </div>
+
+                <div class="summary-grid" id="latestSummary"></div>
+                <pre id="latestResult" class="result-box"></pre>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

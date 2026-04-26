@@ -103,6 +103,14 @@ class ControlMeasure(BaseModel):
         description="Эффективность меры по типам угроз, ключ = threat_type, значение от 0 до 1",
     )
     applicable_node_types: List[NodeType] = Field(default_factory=list)
+    incompatible_with: List[str] = Field(
+        default_factory=list,
+        description="Список measure_id несовместимых мер",
+    )
+    requires: List[str] = Field(
+        default_factory=list,
+        description="Список measure_id обязательных зависимых мер",
+    )
     metadata: Dict[str, float | int | str | bool] = Field(default_factory=dict)
 
 
@@ -167,12 +175,14 @@ class OptimizationConstraints(BaseModel):
     max_budget: float = Field(..., ge=0.0)
     max_labor: Optional[float] = Field(default=None, ge=0.0)
     max_time: Optional[float] = Field(default=None, ge=0.0)
+    max_measures: Optional[int] = Field(default=None, ge=1)
 
 
 class OptimizationRequest(BaseModel):
     current_risks: List[RiskScore]
     measures: List[ControlMeasure]
     constraints: OptimizationConstraints
+    nodes: List[Node] = Field(default_factory=list)
 
 
 class SelectedMeasure(BaseModel):
@@ -182,6 +192,8 @@ class SelectedMeasure(BaseModel):
     labor: float = Field(..., ge=0.0)
     implementation_time: float = Field(..., ge=0.0)
     expected_risk_reduction: float = Field(..., ge=0.0)
+    expected_weighted_risk_reduction: float = Field(..., ge=0.0)
+    covered_node_ids: List[str] = Field(default_factory=list)
 
 
 class OptimizationResponse(BaseModel):
@@ -190,3 +202,6 @@ class OptimizationResponse(BaseModel):
     total_labor: float = Field(default=0.0, ge=0.0)
     total_time: float = Field(default=0.0, ge=0.0)
     expected_total_risk_reduction: float = Field(default=0.0, ge=0.0)
+    expected_weighted_risk_reduction: float = Field(default=0.0, ge=0.0)
+    expected_total_residual_risk: float = Field(default=0.0, ge=0.0)
+    expected_weighted_residual_risk: float = Field(default=0.0, ge=0.0)

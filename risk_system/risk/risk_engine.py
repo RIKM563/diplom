@@ -23,13 +23,28 @@ class RiskEngine:
         medium_threshold: float = 0.50,
         high_threshold: float = 0.80,
         propagation_blend: float = 0.50,
+        threshold_mode: str = "fixed",
+        empirical_low_quantile: float = 0.50,
+        empirical_medium_quantile: float = 0.75,
+        empirical_high_quantile: float = 0.90,
+        min_threshold_gap: float = 0.02,
     ) -> None:
         self.low_threshold = low_threshold
         self.medium_threshold = medium_threshold
         self.high_threshold = high_threshold
         self.propagation_blend = propagation_blend
 
-        self._validate_thresholds()
+        self.threshold_mode = threshold_mode
+        self.empirical_low_quantile = empirical_low_quantile
+        self.empirical_medium_quantile = empirical_medium_quantile
+        self.empirical_high_quantile = empirical_high_quantile
+        self.min_threshold_gap = min_threshold_gap
+
+        self.current_low_threshold = low_threshold
+        self.current_medium_threshold = medium_threshold
+        self.current_high_threshold = high_threshold
+
+        self._validate_params()
 
     def compute_base_risk(
         self,
@@ -44,14 +59,56 @@ class RiskEngine:
         base_risk = probability * impact * criticality
         return float(max(base_risk, 0.0))
 
+    def reset_thresholds(self) -> None:
+        self.current_low_threshold = self.low_threshold
+        self.current_medium_threshold = self.medium_threshold
+        self.current_high_threshold = self.high_threshold
+
+    def configure_thresholds_from_scores(self, scores: Iterable[float]) -> None:
+        if self.threshold_mode == "fixed":
+            self.reset_thresholds()
+            return
+
+        score_series = pd.Series(list(scores), dtype=float)
+        score_series = score_series.replace([np.inf, -np.inf], np.nan).dropna()
+        score_series = score_series.clip(lower=0.0, upper=1.0)
+
+        if score_series.empty:
+            self.reset_thresholds()
+            return
+
+        low = float(score_series.quantile(self.empirical_low_quantile))
+        medium = float(score_series.quantile(self.empirical_medium_quantile))
+        high = float(score_series.quantile(self.empirical_high_quantile))
+
+        low, medium, high = self._enforce_monotonic_thresholds(low, medium, high)
+
+        self.current_low_threshold = low
+        self.current_medium_threshold = medium
+        self.current_high_threshold = high
+
+    def get_thresholds(self) -> Dict[str, float | str]:
+        return {
+            "mode": self.threshold_mode,
+            "fixed_low_threshold": float(self.low_threshold),
+            "fixed_medium_threshold": float(self.medium_threshold),
+            "fixed_high_threshold": float(self.high_threshold),
+            "active_low_threshold": float(self.current_low_threshold),
+            "active_medium_threshold": float(self.current_medium_threshold),
+            "active_high_threshold": float(self.current_high_threshold),
+            "empirical_low_quantile": float(self.empirical_low_quantile),
+            "empirical_medium_quantile": float(self.empirical_medium_quantile),
+            "empirical_high_quantile": float(self.empirical_high_quantile),
+        }
+
     def assign_risk_class(self, score: float) -> RiskClass:
         score = max(float(score), 0.0)
 
-        if score < self.low_threshold:
+        if score < self.current_low_threshold:
             return RiskClass.LOW
-        if score < self.medium_threshold:
+        if score < self.current_medium_threshold:
             return RiskClass.MEDIUM
-        if score < self.high_threshold:
+        if score < self.current_high_threshold:
             return RiskClass.HIGH
         return RiskClass.CRITICAL
 
@@ -88,9 +145,9 @@ class RiskEngine:
         if merged.empty:
             raise ValueError("После объединения таблиц probabilities и impact_table не осталось строк.")
 
-        merged["probability"] = merged[probability_column].astype(float).clip(0.0, 1.0)
-        merged["impact"] = merged["impact"].astype(float).clip(lower=0.0, upper=1.0)
-        merged["criticality"] = merged["final_criticality"].astype(float).clip(lower=0.0)
+        merged["probability"] = pd.to_numeric(merged[probability_column], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+        merged["impact"] = pd.to_numeric(merged["impact"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+        merged["criticality"] = pd.to_numeric(merged["final_criticality"], errors="coerce").fillna(0.0).clip(lower=0.0)
 
         merged["base_risk"] = merged.apply(
             lambda row: self.compute_base_risk(
@@ -150,8 +207,6 @@ class RiskEngine:
         )
 
         result["propagated_risk"] = result["node_id"].map(node_map)
-        result["propagated_risk"] = result["propagated_risk"].astype(float)
-
         result["final_risk"] = result.apply(
             lambda row: self._combine_base_and_propagated(
                 base_risk=row["base_risk"],
@@ -168,18 +223,11 @@ class RiskEngine:
         self._check_columns(event_risk_table, required_columns, "event_risk_table")
 
         grouped = (
-            event_risk_table.groupby(["node_id", "asset_id"], as_index=False)["final_risk"]
-            .apply(self._aggregate_risk_values)
-            .rename(columns={"final_risk": "aggregated_dummy"})
+            event_risk_table.groupby(["node_id", "asset_id"], as_index=False)
+            .agg(final_risk=("final_risk", lambda s: self._aggregate_risk_values(s)))
         )
 
-        if "aggregated_dummy" not in grouped.columns:
-            grouped = grouped.rename(columns={grouped.columns[-1]: "aggregated_dummy"})
-
-        grouped["final_risk"] = grouped["aggregated_dummy"].astype(float)
-        grouped = grouped.drop(columns=["aggregated_dummy"])
         grouped["risk_class"] = grouped["final_risk"].apply(lambda x: self.assign_risk_class(x).value)
-
         return grouped.reset_index(drop=True)
 
     def aggregate_asset_risks(self, node_risk_table: pd.DataFrame) -> pd.DataFrame:
@@ -187,18 +235,11 @@ class RiskEngine:
         self._check_columns(node_risk_table, required_columns, "node_risk_table")
 
         grouped = (
-            node_risk_table.groupby(["asset_id"], as_index=False)["final_risk"]
-            .apply(self._aggregate_risk_values)
-            .rename(columns={"final_risk": "aggregated_dummy"})
+            node_risk_table.groupby(["asset_id"], as_index=False)
+            .agg(final_risk=("final_risk", lambda s: self._aggregate_risk_values(s)))
         )
 
-        if "aggregated_dummy" not in grouped.columns:
-            grouped = grouped.rename(columns={grouped.columns[-1]: "aggregated_dummy"})
-
-        grouped["final_risk"] = grouped["aggregated_dummy"].astype(float)
-        grouped = grouped.drop(columns=["aggregated_dummy"])
         grouped["risk_class"] = grouped["final_risk"].apply(lambda x: self.assign_risk_class(x).value)
-
         return grouped.reset_index(drop=True)
 
     def build_event_scores(self, event_risk_table: pd.DataFrame) -> List[RiskScore]:
@@ -220,9 +261,7 @@ class RiskEngine:
 
         for _, row in event_risk_table.iterrows():
             propagated_value = row.get("propagated_risk")
-            propagated_risk = (
-                None if pd.isna(propagated_value) else float(propagated_value)
-            )
+            propagated_risk = None if pd.isna(propagated_value) else float(propagated_value)
 
             results.append(
                 RiskScore(
@@ -297,11 +336,19 @@ class RiskEngine:
         self,
         event_risk_table: pd.DataFrame,
         explanations: Optional[Dict[str, List[ExplanationItem]]] = None,
+        fit_thresholds: bool = True,
     ) -> RiskAssessmentResponse:
-        node_risk_table = self.aggregate_node_risks(event_risk_table)
+        working_table = event_risk_table.copy()
+
+        if fit_thresholds:
+            self.configure_thresholds_from_scores(working_table["final_risk"])
+
+        working_table["risk_class"] = working_table["final_risk"].apply(lambda x: self.assign_risk_class(x).value)
+
+        node_risk_table = self.aggregate_node_risks(working_table)
         asset_risk_table = self.aggregate_asset_risks(node_risk_table)
 
-        event_scores = self.build_event_scores(event_risk_table)
+        event_scores = self.build_event_scores(working_table)
         node_results = self.build_node_results(node_risk_table, explanations=explanations)
         asset_results = self.build_asset_results(asset_risk_table, node_results)
 
@@ -347,6 +394,32 @@ class RiskEngine:
 
         return float(max(base, combined))
 
+    def _enforce_monotonic_thresholds(
+        self,
+        low: float,
+        medium: float,
+        high: float,
+    ) -> tuple[float, float, float]:
+        gap = self.min_threshold_gap
+
+        low = float(np.clip(low, 0.0, 1.0))
+        medium = float(np.clip(medium, 0.0, 1.0))
+        high = float(np.clip(high, 0.0, 1.0))
+
+        medium = max(medium, low + gap)
+        high = max(high, medium + gap)
+
+        if high > 1.0:
+            high = 1.0
+            medium = min(medium, high - gap)
+            low = min(low, medium - gap)
+
+        low = float(np.clip(low, 0.0, 1.0))
+        medium = float(np.clip(medium, low + gap, 1.0))
+        high = float(np.clip(high, medium + gap, 1.0))
+
+        return low, medium, high
+
     @staticmethod
     def _aggregate_risk_values(values: Iterable[float]) -> float:
         array = np.asarray(list(values), dtype=float)
@@ -382,14 +455,34 @@ class RiskEngine:
             "'calibrated_probability', 'raw_probability' или 'probability'."
         )
 
-    def _validate_thresholds(self) -> None:
+    def _validate_params(self) -> None:
         thresholds = [self.low_threshold, self.medium_threshold, self.high_threshold]
         if any(value <= 0 for value in thresholds):
             raise ValueError("Пороги классов риска должны быть положительными.")
         if not (self.low_threshold < self.medium_threshold < self.high_threshold):
             raise ValueError(
-                "Пороги классов риска должны удовлетворять условию: "
-                "low < medium < high."
+                "Фиксированные пороги классов риска должны удовлетворять условию: low < medium < high."
             )
+
+        if self.threshold_mode not in {"fixed", "empirical"}:
+            raise ValueError("threshold_mode должен быть 'fixed' или 'empirical'.")
+
+        quantiles = [
+            self.empirical_low_quantile,
+            self.empirical_medium_quantile,
+            self.empirical_high_quantile,
+        ]
+        if any(not (0.0 <= q <= 1.0) for q in quantiles):
+            raise ValueError("Эмпирические квантили должны лежать в диапазоне [0, 1].")
+        if not (
+            self.empirical_low_quantile
+            < self.empirical_medium_quantile
+            < self.empirical_high_quantile
+        ):
+            raise ValueError("Эмпирические квантили должны удовлетворять условию: low < medium < high.")
+
+        if self.min_threshold_gap <= 0:
+            raise ValueError("min_threshold_gap должен быть положительным.")
+
         if not (0.0 <= self.propagation_blend <= 1.0):
             raise ValueError("Параметр propagation_blend должен лежать в диапазоне [0, 1].")

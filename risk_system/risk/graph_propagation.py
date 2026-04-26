@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -19,14 +19,21 @@ class GraphPropagator:
     def __init__(
         self,
         alpha: float = 0.70,
+        decay: float = 0.85,
         max_iter: int = 20,
         tol: float = 1e-4,
         clip_to_unit: bool = True,
+        max_growth_factor: float = 1.35,
+        growth_margin: float = 0.20,
     ) -> None:
         self.alpha = alpha
+        self.decay = decay
         self.max_iter = max_iter
         self.tol = tol
         self.clip_to_unit = clip_to_unit
+        self.max_growth_factor = max_growth_factor
+        self.growth_margin = growth_margin
+
         self._validate_params()
 
     def propagate(
@@ -70,8 +77,10 @@ class GraphPropagator:
     ) -> np.ndarray:
         self._validate_inputs(base_vector, influence_matrix)
 
-        propagated = self.alpha * base_vector + (1.0 - self.alpha) * (influence_matrix.T @ base_vector)
-        return self._postprocess_vector(propagated)
+        propagated_component = influence_matrix.T @ base_vector
+        next_vector = self.alpha * base_vector + (1.0 - self.alpha) * self.decay * propagated_component
+
+        return self._apply_caps(base_vector, next_vector)
 
     def iterative_propagation(
         self,
@@ -82,9 +91,12 @@ class GraphPropagator:
 
         current = base_vector.copy()
 
-        for _ in range(self.max_iter):
-            next_vector = self.alpha * base_vector + (1.0 - self.alpha) * (influence_matrix.T @ current)
-            next_vector = self._postprocess_vector(next_vector)
+        for iteration in range(self.max_iter):
+            propagated_component = influence_matrix.T @ current
+            decay_factor = self.decay ** (iteration + 1)
+
+            next_vector = self.alpha * base_vector + (1.0 - self.alpha) * decay_factor * propagated_component
+            next_vector = self._apply_caps(base_vector, next_vector)
 
             if np.linalg.norm(next_vector - current, ord=1) < self.tol:
                 current = next_vector
@@ -143,6 +155,18 @@ class GraphPropagator:
 
         return pd.DataFrame(rows)
 
+    def _apply_caps(self, base_vector: np.ndarray, propagated_vector: np.ndarray) -> np.ndarray:
+        base = np.asarray(base_vector, dtype=float).reshape(-1)
+        propagated = np.asarray(propagated_vector, dtype=float).reshape(-1)
+
+        upper_cap = np.maximum(base * self.max_growth_factor, base + self.growth_margin)
+        upper_cap = np.clip(upper_cap, 0.0, 1.0)
+
+        result = np.maximum(propagated, base)
+        result = np.minimum(result, upper_cap)
+
+        return self._postprocess_vector(result)
+
     def _postprocess_vector(self, vector: np.ndarray) -> np.ndarray:
         result = np.asarray(vector, dtype=float).reshape(-1)
         if self.clip_to_unit:
@@ -167,10 +191,16 @@ class GraphPropagator:
     def _validate_params(self) -> None:
         if not (0.0 <= self.alpha <= 1.0):
             raise ValueError("Параметр alpha должен лежать в диапазоне [0, 1].")
+        if not (0.0 < self.decay <= 1.0):
+            raise ValueError("Параметр decay должен лежать в диапазоне (0, 1].")
         if self.max_iter <= 0:
             raise ValueError("Параметр max_iter должен быть положительным.")
         if self.tol <= 0:
             raise ValueError("Параметр tol должен быть положительным.")
+        if self.max_growth_factor < 1.0:
+            raise ValueError("max_growth_factor должен быть не меньше 1.0.")
+        if self.growth_margin < 0.0:
+            raise ValueError("growth_margin должен быть неотрицательным.")
 
     @staticmethod
     def _aggregate_risk_values(values) -> float:

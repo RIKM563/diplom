@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} — О системе</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">RS</div>
+                <div>
+                    <h1>{{ title }}</h1>
+                    <p>Версия {{ version }}</p>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <a href="/ui">Назад к интерфейсу</a>
+                <a href="/docs" target="_blank">Swagger</a>
+                <a href="/health" target="_blank">Health</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <section class="hero">
+                <div>
+                    <h2>О системе</h2>
+                    <p>
+                        Веб-приложение предназначено для автоматизации анализа и оценки рисков
+                        информационной безопасности корпоративных систем банка на основе методов машинного обучения.
+                    </p>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h3>Основные возможности</h3>
+                <ul class="about-list">
+                    <li>обучение модели вероятности реализации угроз;</li>
+                    <li>калибровка вероятностных оценок;</li>
+                    <li>расчет ущерба, критичности и итогового риска;</li>
+                    <li>учет зависимостей угроз и графового распространения риска;</li>
+                    <li>классификация риска по уровням;</li>
+                    <li>подбор мер защиты при ресурсных ограничениях.</li>
+                </ul>
+            </section>
+
+            <section class="panel">
+                <h3>Логика работы</h3>
+                <div class="about-grid">
+                    <div class="summary-card">
+                        <span class="label">1. Обучение</span>
+                        <span class="value value-small">Система принимает обучающие данные и строит модель оценки вероятности угроз.</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="label">2. Оценка</span>
+                        <span class="value value-small">Для новых входных данных вычисляются вероятности, ущерб, критичность и итоговые классы риска.</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="label">3. Оптимизация</span>
+                        <span class="value value-small">По рассчитанным рискам подбираются меры защиты с учетом ограничений.</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h3>Формат объяснения результатов</h3>
+                <p>
+                    В интерфейсе результаты показываются в трех формах:
+                </p>
+                <ul class="about-list">
+                    <li>сводные карточки для быстрого восприятия общей картины;</li>
+                    <li>таблицы по событиям, узлам, активам и выбранным мерам защиты;</li>
+                    <li>интерпретационные блоки, где для каждого узла кратко описываются класс риска, уровень риска и основные влияющие признаки.</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from fastapi.staticfiles import StaticFiles
+from risk_system.ui import router as ui_router
 
 from risk_system.bayesian import BayesianEngine
 from risk_system.config import settings
@@ -50,16 +52,32 @@ class AppContainer:
         self.calibrator: Optional[Calibrator] = None
 
         self.impact_model = ImpactModel(
+            event_component_weight=settings.impact.event_component_weight,
+            asset_component_weight=settings.impact.asset_component_weight,
             severity_weight=settings.impact.severity_weight,
             frequency_weight=settings.impact.frequency_weight,
             anomaly_weight=settings.impact.anomaly_weight,
             vulnerability_weight=settings.impact.vulnerability_weight,
             privilege_weight=settings.impact.privilege_weight,
             exposure_weight=settings.impact.exposure_weight,
+            event_context_weight=settings.impact.event_context_weight,
+            cost_weight=settings.impact.cost_weight,
+            data_sensitivity_weight=settings.impact.data_sensitivity_weight,
+            regulatory_weight=settings.impact.regulatory_weight,
+            client_exposure_weight=settings.impact.client_exposure_weight,
+            business_criticality_weight=settings.impact.business_criticality_weight,
+            tier_weight=settings.impact.tier_weight,
             node_criticality_weight=settings.impact.node_criticality_weight,
             asset_criticality_weight=settings.impact.asset_criticality_weight,
+            business_context_weight=settings.impact.business_context_weight,
             frequency_scale=settings.impact.frequency_scale,
             asset_cost_scale=settings.impact.asset_cost_scale,
+            tier_scale=settings.impact.tier_scale,
+            failed_logins_scale=settings.impact.failed_logins_scale,
+            suspicious_processes_scale=settings.impact.suspicious_processes_scale,
+            open_ports_scale=settings.impact.open_ports_scale,
+            large_transfer_scale=settings.impact.large_transfer_scale,
+            threat_multipliers=settings.impact.threat_multipliers,
         )
 
         self.risk_engine = RiskEngine(
@@ -67,25 +85,46 @@ class AppContainer:
             medium_threshold=settings.risk_thresholds.medium_threshold,
             high_threshold=settings.risk_thresholds.high_threshold,
             propagation_blend=settings.propagation.blend,
+            threshold_mode=settings.risk_thresholds.mode,
+            empirical_low_quantile=settings.risk_thresholds.empirical_low_quantile,
+            empirical_medium_quantile=settings.risk_thresholds.empirical_medium_quantile,
+            empirical_high_quantile=settings.risk_thresholds.empirical_high_quantile,
+            min_threshold_gap=settings.risk_thresholds.min_threshold_gap,
         )
 
         self.influence_builder = InfluenceMatrixBuilder(
             self_weight=settings.influence.self_weight,
             normalize_rows=settings.influence.normalize_rows,
             min_weight=settings.influence.min_weight,
+            max_weight=settings.influence.max_weight,
+            trust_weight=settings.influence.trust_weight,
+            same_segment_bonus=settings.influence.same_segment_bonus,
+            cross_segment_penalty=settings.influence.cross_segment_penalty,
+            same_service_bonus=settings.influence.same_service_bonus,
+            node_type_matrix=settings.influence.node_type_matrix,
         )
 
         self.graph_propagator = GraphPropagator(
             alpha=settings.propagation.alpha,
+            decay=settings.propagation.decay,
             max_iter=settings.propagation.max_iter,
             tol=settings.propagation.tol,
             clip_to_unit=settings.propagation.clip_to_unit,
+            max_growth_factor=settings.propagation.max_growth_factor,
+            growth_margin=settings.propagation.growth_margin,
         )
 
-        self.bayesian_engine = BayesianEngine()
+        self.bayesian_engine = BayesianEngine(
+            dependencies=settings.bayesian.dependencies,
+            group_key=settings.bayesian.group_key,
+            min_probability=settings.bayesian.min_probability,
+            max_probability=settings.bayesian.max_probability,
+        )
 
         self.control_optimizer = ControlOptimizer(
             min_effectiveness=settings.optimization.min_effectiveness,
+            require_applicability=settings.optimization.require_applicability,
+            class_weights=settings.optimization.class_weights,
         )
 
         self.is_trained: bool = False
@@ -199,6 +238,9 @@ class AppContainer:
     def get_latest_response(self) -> Optional[RiskAssessmentResponse]:
         return self.storage.get_response()
 
+    def get_thresholds(self) -> Dict[str, float | str]:
+        return self.risk_engine.get_thresholds()
+
     def _build_explanations_map(self, nodes: List[Node]) -> Dict[str, List[ExplanationItem]]:
         if self.risk_model is None:
             return {}
@@ -226,6 +268,9 @@ app = FastAPI(
     version=settings.api.version,
     description=settings.api.description,
 )
+
+app.include_router(ui_router)
+app.mount("/static", StaticFiles(directory=str(settings.paths.static_dir)), name="static")
 
 
 @app.get("/health")
@@ -265,3 +310,8 @@ def get_latest_result() -> RiskAssessmentResponse:
     if latest is None:
         raise HTTPException(status_code=404, detail="Результаты оценки пока отсутствуют.")
     return latest
+
+
+@app.get("/thresholds")
+def get_thresholds() -> Dict[str, float | str]:
+    return container.get_thresholds()
