@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 from joblib import dump, load
+from sklearn.inspection import permutation_importance
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -16,7 +17,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 
 
 @dataclass
@@ -122,6 +123,99 @@ class RiskModel:
         self.fit(x_train, y_train)
         return self.evaluate(x_test, y_test, threshold=threshold)
 
+    def tune(
+        self,
+        x_train: pd.DataFrame | np.ndarray,
+        y_train: pd.Series | np.ndarray,
+        scoring: str = "f1",
+        cv: int = 3,
+        param_grid: Optional[Dict[str, list[Any]]] = None,
+    ) -> Dict[str, Any]:
+        x_values = self._to_matrix(x_train)
+        y_values = self._to_vector(y_train)
+
+        unique, counts = np.unique(y_values, return_counts=True)
+        if len(unique) < 2:
+            self.fit(x_values, y_values)
+            return {
+                "used": False,
+                "reason": "Подбор гиперпараметров невозможен: в обучающей выборке только один класс.",
+            }
+
+        min_class_count = int(counts.min())
+        effective_cv = min(cv, min_class_count)
+
+        if effective_cv < 2:
+            self.fit(x_values, y_values)
+            return {
+                "used": False,
+                "reason": "Подбор гиперпараметров невозможен: недостаточно объектов в одном из классов.",
+            }
+
+        grid = param_grid or self._default_param_grid(self.model_type)
+
+        if not grid:
+            self.fit(x_values, y_values)
+            return {
+                "used": False,
+                "reason": f"Для модели {self.model_type} не задана сетка гиперпараметров.",
+            }
+
+        cv_strategy = StratifiedKFold(
+            n_splits=effective_cv,
+            shuffle=True,
+            random_state=self.random_state,
+        )
+
+        search = GridSearchCV(
+            estimator=self.model,
+            param_grid=grid,
+            scoring=scoring,
+            cv=cv_strategy,
+            n_jobs=None,
+        )
+
+        search.fit(x_values, y_values)
+
+        self.model = search.best_estimator_
+        self.model_params.update(search.best_params_)
+        self.is_fitted_ = True
+        self.classes_ = getattr(self.model, "classes_", None)
+
+        return {
+            "used": True,
+            "model_type": self.model_type,
+            "scoring": scoring,
+            "cv": effective_cv,
+            "best_score": float(search.best_score_),
+            "best_params": dict(search.best_params_),
+        }
+
+    def _default_param_grid(self, model_type: str) -> Dict[str, list[Any]]:
+        if model_type == "logistic_regression":
+            return {
+                "C": [0.1, 1.0, 3.0],
+                "class_weight": ["balanced"],
+            }
+
+        if model_type == "random_forest":
+            return {
+                "n_estimators": [200, 300],
+                "max_depth": [6, 8, 12],
+                "min_samples_split": [6, 10],
+                "min_samples_leaf": [2, 4],
+                "class_weight": ["balanced"],
+            }
+
+        if model_type == "gradient_boosting":
+            return {
+                "n_estimators": [100, 150, 200],
+                "learning_rate": [0.03, 0.05, 0.1],
+                "max_depth": [2, 3],
+            }
+
+        return {}
+
     def save(self, path: str | Path) -> None:
         self._ensure_fitted()
         file_path = Path(path)
@@ -180,6 +274,61 @@ class RiskModel:
         )
         result = result.sort_values("importance", ascending=False).reset_index(drop=True)
         return result
+
+    def get_permutation_importance(
+        self,
+        x: pd.DataFrame | np.ndarray,
+        y: pd.Series | np.ndarray,
+        feature_names: list[str],
+        scoring: str = "f1",
+        n_repeats: int = 10,
+    ) -> pd.DataFrame:
+        self._ensure_fitted()
+
+        x_values = self._to_matrix(x)
+        y_values = self._to_vector(y)
+
+        if len(feature_names) != x_values.shape[1]:
+            raise ValueError(
+                "Количество имен признаков не совпадает с числом столбцов в x."
+            )
+
+        if len(np.unique(y_values)) < 2 and scoring in {"roc_auc", "average_precision"}:
+            raise ValueError(
+                f"Permutation importance с метрикой {scoring} невозможна: "
+                "в выборке присутствует только один класс."
+            )
+
+        result = permutation_importance(
+            estimator=self.model,
+            X=x_values,
+            y=y_values,
+            scoring=scoring,
+            n_repeats=n_repeats,
+            random_state=self.random_state,
+            n_jobs=None,
+        )
+
+        importance_table = pd.DataFrame(
+            {
+                "feature_name": feature_names,
+                "importance": result.importances_mean,
+                "importance_mean": result.importances_mean,
+                "importance_std": result.importances_std,
+            }
+        )
+
+        importance_table["importance_abs"] = importance_table["importance_mean"].abs()
+        importance_table["scoring"] = scoring
+        importance_table["n_repeats"] = n_repeats
+
+        importance_table = importance_table.sort_values(
+            "importance_mean",
+            ascending=False,
+        ).reset_index(drop=True)
+
+        return importance_table
+
 
     def get_model_info(self) -> Dict[str, Any]:
         return {
