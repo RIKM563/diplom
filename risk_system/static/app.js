@@ -1,815 +1,650 @@
-let lastTrainResult = null;
-let lastAssessResult = null;
-let lastOptimizeResult = null;
-let lastLatestResult = null;
+let lastPipelineResult = null;
 
-const trainSample = {
-    events: [
-        {
-            event_id: "e1",
-            node_id: "n1",
-            asset_id: "a1",
-            threat_type: "phishing",
-            source: "mail_gateway",
-            timestamp: "2026-04-01T10:15:00",
-            severity: 0.8,
-            frequency: 15,
-            anomaly_score: 0.7,
-            has_vulnerability: true,
-            privilege_level: 4,
-            has_controls: false,
-            metadata: {
-                failed_logins: 3,
-                external_ip: true
-            }
-        },
-        {
-            event_id: "e2",
-            node_id: "n2",
-            asset_id: "a1",
-            threat_type: "malware",
-            source: "edr",
-            timestamp: "2026-04-01T12:30:00",
-            severity: 0.7,
-            frequency: 20,
-            anomaly_score: 0.9,
-            has_vulnerability: true,
-            privilege_level: 5,
-            has_controls: false,
-            metadata: {
-                suspicious_processes: 4
-            }
-        },
-        {
-            event_id: "e3",
-            node_id: "n3",
-            asset_id: "a2",
-            threat_type: "data_leak",
-            source: "dlp",
-            timestamp: "2026-04-01T14:20:00",
-            severity: 0.95,
-            frequency: 8,
-            anomaly_score: 0.85,
-            has_vulnerability: false,
-            privilege_level: 8,
-            has_controls: false,
-            metadata: {
-                large_transfer_mb: 950
-            }
-        },
-        {
-            event_id: "e4",
-            node_id: "n4",
-            asset_id: "a3",
-            threat_type: "ddos",
-            source: "ids",
-            timestamp: "2026-04-01T16:10:00",
-            severity: 0.6,
-            frequency: 30,
-            anomaly_score: 0.6,
-            has_vulnerability: false,
-            privilege_level: 1,
-            has_controls: true,
-            metadata: {
-                requests_per_sec: 12000
-            }
-        }
-    ],
-    nodes: [
-        {
-            node_id: "n1",
-            asset_id: "a1",
-            node_type: "gateway",
-            segment: "dmz",
-            business_service: "remote_access",
-            criticality: 0.9,
-            exposure: 0.9,
-            trust_level: 0.4,
-            metadata: {
-                internet_facing: true
-            }
-        },
-        {
-            node_id: "n2",
-            asset_id: "a1",
-            node_type: "server",
-            segment: "internal",
-            business_service: "auth_service",
-            criticality: 0.8,
-            exposure: 0.6,
-            trust_level: 0.6,
-            metadata: {
-                domain_joined: true
-            }
-        },
-        {
-            node_id: "n3",
-            asset_id: "a2",
-            node_type: "database",
-            segment: "data",
-            business_service: "customer_db",
-            criticality: 1.0,
-            exposure: 0.5,
-            trust_level: 0.8,
-            metadata: {
-                contains_personal_data: true
-            }
-        },
-        {
-            node_id: "n4",
-            asset_id: "a3",
-            node_type: "application",
-            segment: "web",
-            business_service: "online_banking",
-            criticality: 0.85,
-            exposure: 0.8,
-            trust_level: 0.5,
-            metadata: {
-                customer_facing: true
-            }
-        }
-    ],
-    assets: [
-        {
-            asset_id: "a1",
-            name: "Access Control Platform",
-            owner: "IT Security",
-            business_process: "authentication",
-            criticality: 0.9,
-            cost: 5000000,
-            metadata: {
-                tier: 1
-            }
-        },
-        {
-            asset_id: "a2",
-            name: "Customer Database",
-            owner: "Data Office",
-            business_process: "customer_service",
-            criticality: 1.0,
-            cost: 12000000,
-            metadata: {
-                tier: 1
-            }
-        },
-        {
-            asset_id: "a3",
-            name: "Online Banking Frontend",
-            owner: "Digital Banking",
-            business_process: "online_banking",
-            criticality: 0.85,
-            cost: 8000000,
-            metadata: {
-                tier: 1
-            }
-        }
-    ],
-    labels: {
-        e1: 1,
-        e2: 1,
-        e3: 1,
-        e4: 0
+const pipelineSample = {
+  logs: [
+    {
+      log_id: "log_001",
+      timestamp: "2026-05-09T10:15:00",
+      source_system: "SIEM",
+      source_type: "siem",
+      raw_message: "Software update completed successfully",
+      event_code: "UPDATE_OK",
+      host: "app-server-01",
+      node_id: "node_app_01",
+      asset_id: "asset_payments",
+      action: "software_update",
+      result: "success",
+      severity_from_source: 0.1,
+      metadata: {
+        update_type: "security_patch",
+        critical_asset: true,
+        node_type: "application_server",
+        asset_type: "payment_system",
+        network_segment: "payment_processing",
+        process_criticality: "critical",
+        availability_impact: "high",
+        integrity_impact: "high"
+      }
     },
-    model_type: "random_forest",
-    model_params: {},
-    use_calibration: true
-};
-
-const assessSample = {
-    events: [
-        {
-            event_id: "e10",
-            node_id: "n1",
-            asset_id: "a1",
-            threat_type: "phishing",
-            source: "mail_gateway",
-            timestamp: "2026-04-02T09:10:00",
-            severity: 0.85,
-            frequency: 18,
-            anomaly_score: 0.75,
-            has_vulnerability: true,
-            privilege_level: 5,
-            has_controls: false,
-            metadata: {
-                failed_logins: 5,
-                external_ip: true
-            }
-        },
-        {
-            event_id: "e11",
-            node_id: "n3",
-            asset_id: "a2",
-            threat_type: "data_leak",
-            source: "dlp",
-            timestamp: "2026-04-02T11:45:00",
-            severity: 0.92,
-            frequency: 9,
-            anomaly_score: 0.88,
-            has_vulnerability: false,
-            privilege_level: 9,
-            has_controls: false,
-            metadata: {
-                large_transfer_mb: 1100
-            }
-        }
-    ],
-    nodes: trainSample.nodes,
-    assets: trainSample.assets,
-    edges: [
-        {
-            source_node_id: "n1",
-            target_node_id: "n2",
-            weight: 0.7,
-            relation_type: "network",
-            bidirectional: false
-        },
-        {
-            source_node_id: "n2",
-            target_node_id: "n3",
-            weight: 0.6,
-            relation_type: "service",
-            bidirectional: false
-        }
-    ]
-};
-
-const optimizeSample = {
-    current_risks: [
-        {
-            event_id: "e10",
-            node_id: "n1",
-            asset_id: "a1",
-            threat_type: "phishing",
-            probability: 0.83,
-            impact: 0.79,
-            criticality: 0.9,
-            base_risk: 0.59,
-            propagated_risk: 0.62,
-            final_risk: 0.61,
-            risk_class: "high"
-        },
-        {
-            event_id: "e11",
-            node_id: "n3",
-            asset_id: "a2",
-            threat_type: "data_leak",
-            probability: 0.90,
-            impact: 0.93,
-            criticality: 1.00,
-            base_risk: 0.84,
-            propagated_risk: 0.86,
-            final_risk: 0.85,
-            risk_class: "critical"
-        }
-    ],
-    measures: [
-        {
-            measure_id: "m1",
-            name: "Advanced Email Filtering",
-            measure_type: "software",
-            cost: 300000,
-            labor: 40,
-            implementation_time: 10,
-            effectiveness: {
-                phishing: 0.5,
-                malware: 0.2
-            },
-            applicable_node_types: ["gateway", "server"],
-            incompatible_with: [],
-            requires: [],
-            metadata: {}
-        },
-        {
-            measure_id: "m2",
-            name: "Database Activity Monitoring",
-            measure_type: "software",
-            cost: 500000,
-            labor: 60,
-            implementation_time: 20,
-            effectiveness: {
-                data_leak: 0.45,
-                insider: 0.3
-            },
-            applicable_node_types: ["database"],
-            incompatible_with: [],
-            requires: [],
-            metadata: {}
-        }
-    ],
-    constraints: {
-        max_budget: 700000,
-        max_labor: 100,
-        max_time: 30,
-        max_measures: 2
+    {
+      log_id: "log_002",
+      timestamp: "2026-05-09T10:20:00",
+      source_system: "SIEM",
+      source_type: "siem",
+      raw_message: "Security update failed. EDR agent disabled after update error",
+      event_code: "UPDATE_FAILED",
+      host: "app-server-01",
+      node_id: "node_app_01",
+      asset_id: "asset_payments",
+      action: "software_update",
+      result: "error",
+      severity_from_source: 0.8,
+      metadata: {
+        update_type: "security_patch",
+        edr_disabled: true,
+        critical_asset: true,
+        affected_process: "payment_processing",
+        potential_loss: 750000,
+        node_type: "application_server",
+        asset_type: "payment_system",
+        network_segment: "payment_processing",
+        process_criticality: "critical",
+        availability_impact: "high",
+        integrity_impact: "high"
+      }
     },
-    nodes: trainSample.nodes
+    {
+      log_id: "log_003",
+      timestamp: "2026-05-09T10:25:00",
+      source_system: "EDR",
+      source_type: "edr",
+      raw_message: "Malware detected on database server",
+      event_code: "MALWARE_DETECTED",
+      host: "db-server-01",
+      node_id: "node_db_01",
+      asset_id: "asset_clients_db",
+      action: "malware_detection",
+      result: "blocked",
+      severity_from_source: 0.95,
+      metadata: {
+        malware_detected: true,
+        critical_asset: true,
+        affected_process: "client_data_processing",
+        potential_loss: 1500000,
+        node_type: "database_server",
+        asset_type: "client_database",
+        network_segment: "data_processing",
+        process_criticality: "critical",
+        confidentiality_impact: "critical",
+        integrity_impact: "high"
+      }
+    }
+  ],
+  incident_threshold: 0.5,
+  risk_event_threshold: 0.5,
+  infrastructure_links: [
+    {
+      source_node_id: "node_db_01",
+      target_node_id: "node_app_01",
+      influence_weight: 0.2,
+      relation_type: "service_dependency",
+      description: "Сервер приложения использует базу данных клиентов"
+    }
+  ],
+  optimization_constraints: {
+    max_budget: 800000,
+    max_labor: 120,
+    max_implementation_time: 45,
+    max_measures: 3,
+    min_effectiveness: 0.03
+  }
 };
 
-function pretty(obj) {
-    return JSON.stringify(obj, null, 2);
+function toggleMenu() {
+  document.getElementById("topnav")?.classList.toggle("open");
+}
+
+function closeMenu() {
+  document.getElementById("topnav")?.classList.remove("open");
+}
+
+function scrollToSection(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function pretty(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+function getText(id) {
+  const element = document.getElementById(id);
+  if (!element) return "";
+  return element.value ?? element.textContent ?? "";
 }
 
 function setText(id, value) {
-    const el = document.getElementById(id);
-    if (el) {
-        el.textContent = typeof value === "string" ? value : pretty(value);
-    }
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = typeof value === "string" ? value : pretty(value);
 }
 
-function getTextareaValue(id) {
-    return document.getElementById(id).value.trim();
+function setValue(id, value) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.value = typeof value === "string" ? value : pretty(value);
 }
 
-function saveLocal(key, value) {
-    localStorage.setItem(key, value);
-}
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
 
-function loadLocal(key) {
-    return localStorage.getItem(key) || "";
-}
+  toast.textContent = message;
+  toast.hidden = false;
 
-function clearLocal(key) {
-    localStorage.removeItem(key);
-}
-
-function parseJsonFromTextarea(id, label) {
-    const raw = getTextareaValue(id);
-    if (!raw) {
-        throw new Error(`Поле ${label} пустое.`);
-    }
-    return JSON.parse(raw);
-}
-
-async function postJson(url, payload) {
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(pretty(data));
-    }
-
-    return data;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
+    toast.hidden = true;
+  }, 3000);
 }
 
 async function getJson(url) {
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(pretty(data));
-    }
-
-    return data;
+  const response = await fetch(url);
+  const data = await response.json();
+  if (!response.ok) throw new Error(pretty(data));
+  return data;
 }
 
-function formatJsonTextarea(id) {
-    const raw = getTextareaValue(id);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    document.getElementById(id).value = pretty(parsed);
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(pretty(data));
+  return data;
 }
 
-function validateJsonTextarea(id, resultId) {
-    try {
-        const raw = getTextareaValue(id);
-        if (!raw) {
-            setText(resultId, "Поле пустое.");
-            return;
-        }
-        JSON.parse(raw);
-        setText(resultId, "JSON корректен.");
-    } catch (error) {
-        setText(resultId, `Ошибка JSON: ${error.message}`);
-    }
+function parseTextareaJson(id) {
+  const raw = document.getElementById(id).value.trim();
+  if (!raw) throw new Error("JSON-поле пустое.");
+  return JSON.parse(raw);
 }
 
-function readJsonFileIntoTextarea(fileInputId, textareaId) {
-    const input = document.getElementById(fileInputId);
-    const file = input.files[0];
-    if (!file) {
-        alert("Выбери JSON-файл.");
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = function (event) {
-        const content = event.target.result;
-        document.getElementById(textareaId).value = content;
-    };
-    reader.readAsText(file, "utf-8");
+function insertPipelineSample() {
+  setValue("pipelineInput", pipelineSample);
+  setText("pipelineStatus", "Демонстрационный пример загружен.");
+  showToast("Пример вставлен");
 }
 
-function setupDropzone(dropzoneId, textareaId) {
-    const dropzone = document.getElementById(dropzoneId);
-    if (!dropzone) return;
-
-    ["dragenter", "dragover"].forEach(eventName => {
-        dropzone.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            dropzone.classList.add("dragover");
-        });
-    });
-
-    ["dragleave", "drop"].forEach(eventName => {
-        dropzone.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            dropzone.classList.remove("dragover");
-        });
-    });
-
-    dropzone.addEventListener("drop", (event) => {
-        const file = event.dataTransfer.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            document.getElementById(textareaId).value = e.target.result;
-        };
-        reader.readAsText(file, "utf-8");
-    });
+function formatJson(id) {
+  try {
+    const payload = parseTextareaJson(id);
+    setValue(id, payload);
+    showToast("JSON отформатирован");
+  } catch (error) {
+    showToast(`Ошибка: ${error.message}`);
+  }
 }
 
-function renderSummary(containerId, items) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    if (!items || items.length === 0) {
-        container.innerHTML = "";
-        return;
-    }
-
-    container.innerHTML = items.map(item => `
-        <div class="summary-card">
-            <span class="label">${item.label}</span>
-            <span class="value">${item.value}</span>
-        </div>
-    `).join("");
+function validateJson(id, statusId) {
+  try {
+    parseTextareaJson(id);
+    setText(statusId, "JSON корректен.");
+    showToast("JSON корректен");
+  } catch (error) {
+    setText(statusId, `Ошибка JSON: ${error.message}`);
+    showToast("В JSON есть ошибка");
+  }
 }
 
-function riskBadge(value) {
-    const cls = String(value || "").toLowerCase();
-    return `<span class="risk-badge risk-${cls}">${cls || "n/a"}</span>`;
+function clearPipeline() {
+  setValue("pipelineInput", "");
+  setText("pipelineResult", "Результат пока отсутствует.");
+  setText("pipelineStatus", "Готово к запуску.");
+  resetPipelineMetrics();
+  clearTables();
+  showToast("Данные очищены");
+}
+
+function loadJsonFile(inputId, textareaId) {
+  const input = document.getElementById(inputId);
+  const file = input?.files?.[0];
+
+  if (!file) {
+    showToast("Файл не выбран");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = event => {
+    setValue(textareaId, event.target.result);
+    showToast(`Файл ${file.name} загружен`);
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+function downloadText(filename, text) {
+  if (!text || text.includes("Результат пока отсутствует")) {
+    showToast("Нечего скачивать");
+    return;
+  }
+
+  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
+
+async function checkHealth() {
+  const dot = document.getElementById("apiStatusDot");
+  const text = document.getElementById("apiStatusText");
+
+  try {
+    await getJson("/health");
+    dot.className = "status-dot ok";
+    text.textContent = "Backend доступен";
+    showToast("Backend отвечает");
+  } catch (error) {
+    dot.className = "status-dot error";
+    text.textContent = "Backend недоступен";
+    showToast("Backend недоступен");
+  }
+}
+
+async function runFullPipeline() {
+  try {
+    setText("pipelineStatus", "Выполняется полный конвейер...");
+    const payload = parseTextareaJson("pipelineInput");
+    const result = await postJson("/pipeline/full", payload);
+
+    lastPipelineResult = result;
+    setText("pipelineResult", result);
+    renderPipelineResult(result);
+    setText("pipelineStatus", "Обработка завершена успешно.");
+    showToast("Полный конвейер выполнен");
+  } catch (error) {
+    setText("pipelineStatus", `Ошибка: ${error.message}`);
+    setText("pipelineResult", error.message);
+    showToast("Ошибка обработки");
+  }
+}
+
+function renderPipelineResult(result) {
+  const pipeline = result.pipeline || {};
+  const summary = pipeline.summary || {};
+  const assessments = result.risk_assessments || [];
+  const controls = result.control_optimization?.selected_measures || [];
+
+  renderPipelineMetrics(summary, assessments.length, controls.length);
+  renderStages(summary.pipeline_stages || {});
+  renderRiskAssessments(assessments);
+  renderControlRecommendations(controls);
+  renderRiskEvents(pipeline.risk_events || []);
+  renderIncidents(pipeline.incidents || []);
+}
+
+function resetPipelineMetrics() {
+  const metrics = document.getElementById("pipelineMetrics");
+  if (!metrics) return;
+
+  metrics.innerHTML = [
+    metricCard("Логи", "—"),
+    metricCard("События ЗИ", "—"),
+    metricCard("Инциденты", "—"),
+    metricCard("События риска", "—"),
+    metricCard("Оценки риска", "—"),
+    metricCard("Меры", "—")
+  ].join("");
+}
+
+function renderPipelineMetrics(summary, assessmentsCount, controlsCount) {
+  const metrics = document.getElementById("pipelineMetrics");
+  if (!metrics) return;
+
+  metrics.innerHTML = [
+    metricCard("Логи", summary.logs_received ?? 0),
+    metricCard("События ЗИ", summary.normalized_events_count ?? 0),
+    metricCard("Инциденты", summary.incident_candidates_count ?? 0),
+    metricCard("События риска", summary.risk_events_count ?? 0),
+    metricCard("Оценки риска", assessmentsCount ?? 0),
+    metricCard("Меры", controlsCount ?? 0)
+  ].join("");
+}
+
+function metricCard(label, value) {
+  return `
+    <div class="metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+    </div>
+  `;
+}
+
+function renderStages(stages) {
+  const container = document.getElementById("stageList");
+  if (!container) return;
+
+  const entries = Object.entries(stages);
+
+  if (!entries.length) {
+    container.innerHTML = `<div class="empty-note">Этапы появятся после запуска.</div>`;
+    return;
+  }
+
+  container.innerHTML = entries
+    .map(([key, value]) => {
+      const num = key.replace("stage_", "");
+      return `<div class="stage-item"><strong>Этап ${escapeHtml(num)}.</strong> ${escapeHtml(value)}</div>`;
+    })
+    .join("");
+}
+
+function clearTables() {
+  setEmpty("riskAssessmentsTable", "Нет данных. Запустите обработку.");
+  setEmpty("controlsTable", "Рекомендации по мерам защиты пока не сформированы.");
+  setEmpty("riskEventsTable", "События риска пока не загружены.");
+  setEmpty("incidentsTable", "Инциденты пока не загружены.");
+}
+
+function setEmpty(id, message) {
+  const container = document.getElementById(id);
+  if (!container) return;
+  container.className = "table-shell empty-state";
+  container.textContent = message;
+}
+
+function renderRiskAssessments(items) {
+  const container = document.getElementById("riskAssessmentsTable");
+  if (!container) return;
+
+  container.className = "table-shell";
+
+  container.innerHTML = buildTable(
+    [
+      ["risk_event_id", "Событие риска"],
+      ["node_id", "Объект"],
+      ["asset_id", "Актив"],
+      ["threat_scenario", "Сценарий"],
+      ["probability_estimate", "p"],
+      ["impact_estimate", "I"],
+      ["initial_risk_estimate", "r⁰"],
+      ["graph_adjusted_risk_estimate", "Граф"],
+      ["final_risk_estimate", "Итог"],
+      ["risk_class", "Класс"],
+      ["priority", "Приоритет"]
+    ],
+    items
+  );
+}
+
+function renderControlRecommendations(items) {
+  const container = document.getElementById("controlsTable");
+  if (!container) return;
+
+  container.className = "table-shell";
+
+  container.innerHTML = buildTable(
+    [
+      ["measure_id", "ID"],
+      ["name", "Мера"],
+      ["measure_type", "Тип"],
+      ["cost", "Стоимость"],
+      ["labor", "Трудоемкость"],
+      ["implementation_time", "Срок"],
+      ["expected_risk_reduction", "Снижение"],
+      ["expected_residual_risk", "Остаток"]
+    ],
+    items
+  );
+}
+
+function renderRiskEvents(items) {
+  const container = document.getElementById("riskEventsTable");
+  if (!container) return;
+
+  container.className = "table-shell";
+
+  container.innerHTML = buildTable(
+    [
+      ["risk_event_id", "ID"],
+      ["incident_id", "Инцидент"],
+      ["event_type", "Тип"],
+      ["threat_scenario", "Сценарий"],
+      ["node_id", "Объект"],
+      ["asset_id", "Актив"],
+      ["probability_estimate", "Вероятность"],
+      ["impact_estimate", "Последствия"],
+      ["classifier_confidence", "ML"]
+    ],
+    items
+  );
+}
+
+function renderIncidents(items) {
+  const container = document.getElementById("incidentsTable");
+  if (!container) return;
+
+  container.className = "table-shell";
+
+  container.innerHTML = buildTable(
+    [
+      ["incident_id", "ID"],
+      ["incident_type", "Тип"],
+      ["severity", "Уровень"],
+      ["status", "Статус"],
+      ["node_id", "Объект"],
+      ["asset_id", "Актив"],
+      ["affected_process", "Процесс"],
+      ["classifier_confidence", "Уверенность"]
+    ],
+    items
+  );
 }
 
 function buildTable(columns, rows) {
-    if (!rows || rows.length === 0) {
-        return "<div class='result-box'>Нет данных для отображения.</div>";
-    }
+  if (!rows || rows.length === 0) {
+    return `<div class="empty-state">Нет данных для отображения.</div>`;
+  }
 
-    const thead = columns.map(col => `<th>${col.label}</th>`).join("");
-    const tbody = rows.map(row => {
-        return `<tr>${columns.map(col => {
-            let value = row[col.key];
+  const head = columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("");
 
-            if (col.key === "risk_class") {
-                return `<td>${riskBadge(value)}</td>`;
-            }
+  const body = rows
+    .map(row => {
+      const cells = columns
+        .map(([key]) => `<td>${formatCell(key, row[key])}</td>`)
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("");
 
-            if (typeof value === "number") {
-                value = Number.isInteger(value) ? value : value.toFixed(4);
-            }
-
-            if (Array.isArray(value)) {
-                value = value.join(", ");
-            }
-
-            if (value === undefined || value === null) {
-                value = "";
-            }
-
-            return `<td>${value}</td>`;
-        }).join("")}</tr>`;
-    }).join("");
-
-    return `
-        <table class="result-table">
-            <thead><tr>${thead}</tr></thead>
-            <tbody>${tbody}</tbody>
-        </table>
-    `;
+  return `
+    <table class="data-table">
+      <thead><tr>${head}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
 }
 
-function renderAssessViews(data) {
-    const events = data.event_risks || [];
-    const nodes = data.node_risks || [];
-    const assets = data.asset_risks || [];
+function formatCell(key, value) {
+  if (value === null || value === undefined || value === "") return "—";
 
-    renderSummary("assessSummary", [
-        { label: "Событий", value: events.length },
-        { label: "Узлов", value: nodes.length },
-        { label: "Активов", value: assets.length },
-        {
-            label: "Макс. риск актива",
-            value: assets.length ? Math.max(...assets.map(x => x.final_risk || 0)).toFixed(4) : "0.0000"
-        }
-    ]);
+  if (key === "risk_class" || key === "severity") {
+    return pill(value);
+  }
 
-    document.getElementById("eventsTableContainer").innerHTML = buildTable(
-        [
-            { key: "event_id", label: "Event ID" },
-            { key: "node_id", label: "Node ID" },
-            { key: "asset_id", label: "Asset ID" },
-            { key: "threat_type", label: "Threat" },
-            { key: "probability", label: "Probability" },
-            { key: "base_risk", label: "Base Risk" },
-            { key: "final_risk", label: "Final Risk" },
-            { key: "risk_class", label: "Risk Class" }
-        ],
-        events
-    );
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  }
 
-    document.getElementById("nodesTableContainer").innerHTML = buildTable(
-        [
-            { key: "node_id", label: "Node ID" },
-            { key: "asset_id", label: "Asset ID" },
-            { key: "final_risk", label: "Final Risk" },
-            { key: "risk_class", label: "Risk Class" }
-        ],
-        nodes
-    );
+  if (Array.isArray(value)) {
+    return escapeHtml(value.join(", "));
+  }
 
-    document.getElementById("assetsTableContainer").innerHTML = buildTable(
-        [
-            { key: "asset_id", label: "Asset ID" },
-            { key: "final_risk", label: "Final Risk" },
-            { key: "risk_class", label: "Risk Class" }
-        ],
-        assets
-    );
+  if (typeof value === "object") {
+    return `<code>${escapeHtml(JSON.stringify(value))}</code>`;
+  }
 
-    renderAssessExplanations(nodes);
+  return escapeHtml(String(value));
 }
 
-function renderAssessExplanations(nodes) {
-    const container = document.getElementById("assessExplanationsContainer");
-    if (!container) return;
-
-    if (!nodes || nodes.length === 0) {
-        container.innerHTML = "<div class='result-box'>Объяснения пока отсутствуют.</div>";
-        return;
-    }
-
-    container.innerHTML = nodes.map(node => {
-        const explanations = node.explanations || [];
-        const drivers = explanations.length
-            ? explanations.map(item => {
-                const contribution = typeof item.contribution === "number"
-                    ? item.contribution.toFixed(4)
-                    : item.contribution;
-                return `<span class="driver-chip">${item.feature_name}: ${contribution}</span>`;
-            }).join("")
-            : "<span class='driver-chip'>Подробные драйверы не переданы backend</span>";
-
-        return `
-            <div class="explanation-card">
-                <h4>Узел ${node.node_id}</h4>
-                <p>
-                    Для узла <strong>${node.node_id}</strong> в составе актива <strong>${node.asset_id}</strong>
-                    рассчитан итоговый риск <strong>${Number(node.final_risk || 0).toFixed(4)}</strong>
-                    с классом ${riskBadge(node.risk_class)}.
-                </p>
-                <p>
-                    Интерпретация результата основана на наиболее значимых признаках, повлиявших на оценку модели.
-                    Эти признаки помогают понять, почему узел был отнесен к данному классу риска.
-                </p>
-                <div class="explanation-drivers">${drivers}</div>
-            </div>
-        `;
-    }).join("");
+function pill(value) {
+  const text = String(value).toLowerCase();
+  return `<span class="pill ${escapeHtml(text)}">${escapeHtml(text)}</span>`;
 }
 
-function renderOptimizeViews(data) {
-    const selected = data.selected_measures || [];
-
-    renderSummary("optimizeSummary", [
-        { label: "Выбрано мер", value: selected.length },
-        { label: "Стоимость", value: (data.total_cost || 0).toFixed(2) },
-        { label: "Снижение риска", value: (data.expected_total_risk_reduction || 0).toFixed(4) },
-        { label: "Остаточный риск", value: (data.expected_total_residual_risk || 0).toFixed(4) }
-    ]);
-
-    document.getElementById("optimizeTableContainer").innerHTML = buildTable(
-        [
-            { key: "measure_id", label: "ID" },
-            { key: "name", label: "Название" },
-            { key: "cost", label: "Стоимость" },
-            { key: "labor", label: "Трудозатраты" },
-            { key: "implementation_time", label: "Время" },
-            { key: "expected_risk_reduction", label: "Risk Reduction" },
-            { key: "expected_weighted_risk_reduction", label: "Weighted Reduction" },
-            { key: "covered_node_ids", label: "Покрытие узлов" }
-        ],
-        selected
-    );
-
-    const explanationContainer = document.getElementById("optimizeExplanationContainer");
-    if (explanationContainer) {
-        const names = selected.map(item => item.name).join(", ") || "меры не выбраны";
-        explanationContainer.innerHTML = `
-            <h4>Пояснение по результату оптимизации</h4>
-            <p>
-                Система выбрала набор мер защиты: <strong>${names}</strong>.
-                Решение сформировано с учетом ограничений по бюджету, трудозатратам, времени и числу мер,
-                а также с учетом ожидаемого взвешенного снижения риска.
-            </p>
-            <p>
-                Итоговая ожидаемая стоимость составляет <strong>${Number(data.total_cost || 0).toFixed(2)}</strong>,
-                а ожидаемый остаточный риск — <strong>${Number(data.expected_total_residual_risk || 0).toFixed(4)}</strong>.
-            </p>
-        `;
-    }
+async function refreshStorageSummary() {
+  try {
+    const summary = await getJson("/event-storage-summary");
+    setText("storageSummary", summary);
+    renderStorageMetrics(summary);
+    showToast("Сводка базы обновлена");
+  } catch (error) {
+    setText("storageSummary", error.message);
+    showToast("Ошибка загрузки сводки базы");
+  }
 }
 
-function renderLatestSummary(data) {
-    const events = data.event_risks || [];
-    const nodes = data.node_risks || [];
-    const assets = data.asset_risks || [];
+function renderStorageMetrics(summary) {
+  const container = document.getElementById("storageMetrics");
+  if (!container) return;
 
-    renderSummary("latestSummary", [
-        { label: "Последних событий", value: events.length },
-        { label: "Последних узлов", value: nodes.length },
-        { label: "Последних активов", value: assets.length }
-    ]);
+  container.innerHTML = [
+    metricCard("События ЗИ", summary.security_events_count ?? 0),
+    metricCard("Инциденты", summary.incidents_count ?? 0),
+    metricCard("События риска", summary.risk_events_count ?? 0),
+    metricCard("Оценки риска", summary.risk_assessments_count ?? 0),
+    metricCard("Меры", summary.control_recommendations_count ?? 0)
+  ].join("");
 }
 
-function setApiStatus(ok) {
-    const badge = document.getElementById("apiStatusBadge");
-    if (!badge) return;
+async function loadStoredResults() {
+  try {
+    const assessments = await getJson("/risk-assessments");
+    const controls = await getJson("/control-recommendations");
+    const riskEvents = await getJson("/risk-events");
+    const incidents = await getJson("/incidents");
 
-    badge.className = "status-badge " + (ok ? "ok" : "error");
-    badge.textContent = ok ? "API доступен" : "Ошибка API";
-}
+    renderRiskAssessments(assessments);
+    renderControlRecommendations(controls);
+    renderRiskEvents(riskEvents);
+    renderIncidents(incidents);
 
-function downloadJson(filename, data) {
-    if (!data) {
-        alert("Нет данных для скачивания.");
-        return;
-    }
-
-    const blob = new Blob([pretty(data)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-
-    URL.revokeObjectURL(url);
-}
-
-document.getElementById("checkHealthBtn").addEventListener("click", async () => {
-    try {
-        const data = await getJson("/health");
-        setText("healthResult", data);
-        setApiStatus(true);
-    } catch (error) {
-        setText("healthResult", String(error));
-        setApiStatus(false);
-    }
-});
-
-document.getElementById("trainBtn").addEventListener("click", async () => {
-    try {
-        const payload = parseJsonFromTextarea("trainPayload", "/train");
-        saveLocal("trainPayload", pretty(payload));
-        setText("trainResult", "Запрос отправлен...");
-        const data = await postJson("/train", payload);
-        lastTrainResult = data;
-
-        renderSummary("trainSummary", [
-            { label: "Статус", value: data.status || "-" },
-            { label: "Сэмплов", value: data.samples || 0 },
-            { label: "Accuracy", value: data.metrics?.accuracy?.toFixed?.(4) ?? data.metrics?.accuracy ?? "-" },
-            { label: "F1", value: data.metrics?.f1?.toFixed?.(4) ?? data.metrics?.f1 ?? "-" }
-        ]);
-
-        setText("trainResult", data);
-    } catch (error) {
-        setText("trainResult", String(error));
-    }
-});
-
-document.getElementById("assessBtn").addEventListener("click", async () => {
-    try {
-        const payload = parseJsonFromTextarea("assessPayload", "/assess");
-        saveLocal("assessPayload", pretty(payload));
-        setText("assessResult", "Запрос отправлен...");
-        const data = await postJson("/assess", payload);
-        lastAssessResult = data;
-        renderAssessViews(data);
-        setText("assessResult", data);
-    } catch (error) {
-        setText("assessResult", String(error));
-    }
-});
-
-document.getElementById("optimizeBtn").addEventListener("click", async () => {
-    try {
-        const payload = parseJsonFromTextarea("optimizePayload", "/optimize");
-        saveLocal("optimizePayload", pretty(payload));
-        setText("optimizeResult", "Запрос отправлен...");
-        const data = await postJson("/optimize", payload);
-        lastOptimizeResult = data;
-        renderOptimizeViews(data);
-        setText("optimizeResult", data);
-    } catch (error) {
-        setText("optimizeResult", String(error));
-    }
-});
-
-async function loadLatest() {
-    try {
-        const data = await getJson("/latest");
-        lastLatestResult = data;
-        renderLatestSummary(data);
-        setText("latestResult", data);
-    } catch (error) {
-        setText("latestResult", String(error));
-    }
-}
-
-document.getElementById("latestBtn").addEventListener("click", loadLatest);
-document.getElementById("latestBtnHero").addEventListener("click", loadLatest);
-
-document.getElementById("loadTrainFileBtn").addEventListener("click", () => readJsonFileIntoTextarea("trainFileInput", "trainPayload"));
-document.getElementById("loadAssessFileBtn").addEventListener("click", () => readJsonFileIntoTextarea("assessFileInput", "assessPayload"));
-document.getElementById("loadOptimizeFileBtn").addEventListener("click", () => readJsonFileIntoTextarea("optimizeFileInput", "optimizePayload"));
-
-document.getElementById("trainSampleBtn").addEventListener("click", () => {
-    document.getElementById("trainPayload").value = pretty(trainSample);
-});
-document.getElementById("assessSampleBtn").addEventListener("click", () => {
-    document.getElementById("assessPayload").value = pretty(assessSample);
-});
-document.getElementById("optimizeSampleBtn").addEventListener("click", () => {
-    document.getElementById("optimizePayload").value = pretty(optimizeSample);
-});
-
-document.getElementById("formatTrainBtn").addEventListener("click", () => formatJsonTextarea("trainPayload"));
-document.getElementById("formatAssessBtn").addEventListener("click", () => formatJsonTextarea("assessPayload"));
-document.getElementById("formatOptimizeBtn").addEventListener("click", () => formatJsonTextarea("optimizePayload"));
-
-document.getElementById("validateTrainBtn").addEventListener("click", () => validateJsonTextarea("trainPayload", "trainResult"));
-document.getElementById("validateAssessBtn").addEventListener("click", () => validateJsonTextarea("assessPayload", "assessResult"));
-document.getElementById("validateOptimizeBtn").addEventListener("click", () => validateJsonTextarea("optimizePayload", "optimizeResult"));
-
-document.getElementById("saveTrainBtn").addEventListener("click", () => saveLocal("trainPayload", getTextareaValue("trainPayload")));
-document.getElementById("saveAssessBtn").addEventListener("click", () => saveLocal("assessPayload", getTextareaValue("assessPayload")));
-document.getElementById("saveOptimizeBtn").addEventListener("click", () => saveLocal("optimizePayload", getTextareaValue("optimizePayload")));
-
-document.getElementById("clearTrainBtn").addEventListener("click", () => {
-    document.getElementById("trainPayload").value = "";
-    clearLocal("trainPayload");
-});
-document.getElementById("clearAssessBtn").addEventListener("click", () => {
-    document.getElementById("assessPayload").value = "";
-    clearLocal("assessPayload");
-});
-document.getElementById("clearOptimizeBtn").addEventListener("click", () => {
-    document.getElementById("optimizePayload").value = "";
-    clearLocal("optimizePayload");
-});
-
-document.getElementById("exportTrainResultBtn").addEventListener("click", () => {
-    downloadJson("train_result.json", lastTrainResult);
-});
-document.getElementById("exportAssessResultBtn").addEventListener("click", () => {
-    downloadJson("assess_result.json", lastAssessResult);
-});
-document.getElementById("exportOptimizeResultBtn").addEventListener("click", () => {
-    downloadJson("optimize_result.json", lastOptimizeResult);
-});
-document.getElementById("exportLatestResultBtn").addEventListener("click", () => {
-    downloadJson("latest_result.json", lastLatestResult);
-});
-
-document.querySelectorAll(".tab-button").forEach(button => {
-    button.addEventListener("click", () => {
-        const target = button.dataset.target;
-
-        document.querySelectorAll(".tab-button").forEach(btn => btn.classList.remove("active"));
-        document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
-
-        button.classList.add("active");
-        document.getElementById(target).classList.add("active");
+    setText("pipelineResult", {
+      risk_assessments: assessments,
+      control_recommendations: controls,
+      risk_events: riskEvents,
+      incidents: incidents
     });
-});
 
-setupDropzone("trainDropzone", "trainPayload");
-setupDropzone("assessDropzone", "assessPayload");
-setupDropzone("optimizeDropzone", "optimizePayload");
+    renderPipelineMetrics(
+      {
+        logs_received: "БД",
+        normalized_events_count: "БД",
+        incident_candidates_count: incidents.length,
+        risk_events_count: riskEvents.length
+      },
+      assessments.length,
+      controls.length
+    );
 
-window.addEventListener("load", () => {
-    document.getElementById("trainPayload").value = loadLocal("trainPayload");
-    document.getElementById("assessPayload").value = loadLocal("assessPayload");
-    document.getElementById("optimizePayload").value = loadLocal("optimizePayload");
+    showToast("Результаты загружены из базы");
+  } catch (error) {
+    showToast(`Ошибка загрузки: ${error.message}`);
+  }
+}
+
+async function trainClassifierFromFile() {
+  const input = document.getElementById("trainingFileInput");
+  const file = input?.files?.[0];
+
+  if (!file) {
+    showToast("Выберите CSV или JSON-файл");
+    return;
+  }
+
+  const modelType = document.getElementById("modelType").value;
+  const saveModel = document.getElementById("saveModel").checked;
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("model_type", modelType);
+  formData.append("save_model", String(saveModel));
+
+  try {
+    setText("trainingResult", "Модель обучается...");
+    const response = await fetch("/risk-event-classifier/train-file", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(pretty(data));
+
+    setText("trainingResult", data);
+    showToast("ML-классификатор обучен");
+  } catch (error) {
+    setText("trainingResult", error.message);
+    showToast("Ошибка обучения модели");
+  }
+}
+
+function openTab(tabId, button) {
+  document.querySelectorAll(".tab-content").forEach(tab => tab.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(tab => tab.classList.remove("active"));
+
+  document.getElementById(tabId)?.classList.add("active");
+  button?.classList.add("active");
+}
+
+function setupDropzone(dropzoneId, textareaId) {
+  const dropzone = document.getElementById(dropzoneId);
+  if (!dropzone) return;
+
+  ["dragenter", "dragover"].forEach(name => {
+    dropzone.addEventListener(name, event => {
+      event.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+  });
+
+  ["dragleave", "drop"].forEach(name => {
+    dropzone.addEventListener(name, event => {
+      event.preventDefault();
+      dropzone.classList.remove("dragover");
+    });
+  });
+
+  dropzone.addEventListener("drop", event => {
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+      setValue(textareaId, e.target.result);
+      showToast(`Файл ${file.name} загружен`);
+    };
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setupDropzone("pipelineDropzone", "pipelineInput");
+  insertPipelineSample();
+  checkHealth();
 });

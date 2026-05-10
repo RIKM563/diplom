@@ -6,14 +6,14 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 from risk_system.ui import router as ui_router
 
 from risk_system.bayesian import BayesianEngine
 from risk_system.config import settings
-from risk_system.data import Storage
+from risk_system.data import EventPipelineRepository, Storage
 from risk_system.domain import (
     Asset,
     ExplanationItem,
@@ -28,6 +28,16 @@ from risk_system.features import FeatureEngine
 from risk_system.models import Calibrator, RiskModel
 from risk_system.optimization import ControlOptimizer
 from risk_system.risk import GraphPropagator, ImpactModel, InfluenceMatrixBuilder, RiskEngine
+from risk_system.event_pipeline import (
+    EventPipelineRequest,
+    EventPipelineResponse,
+    EventRiskPipeline,
+    FullPipelineResponse,
+    RiskEventClassifierFlatTrainingRequest,
+    RiskEventClassifierTrainingRequest,
+    RiskEventClassifierTrainingResponse,
+    RiskEventTrainingSampleImporter,
+)
 
 
 class TrainingRequest(BaseModel):
@@ -107,6 +117,7 @@ class TrainingRequest(BaseModel):
         description="Количество признаков, возвращаемых в ответе обучения",
     )
 
+
 class TrainingResponse(BaseModel):
     status: str
     model_info: Dict[str, Any]
@@ -130,7 +141,9 @@ class TrainingResponse(BaseModel):
 class AppContainer:
     def __init__(self) -> None:
         self.storage = Storage()
-
+        self.event_repository = EventPipelineRepository()
+        self.event_risk_pipeline = EventRiskPipeline()
+        self.risk_event_training_importer = RiskEventTrainingSampleImporter()
         self.feature_engine = FeatureEngine()
         self.risk_model: Optional[RiskModel] = None
         self.calibrator: Optional[Calibrator] = None
@@ -214,6 +227,31 @@ class AppContainer:
         )
 
         self.is_trained: bool = False
+
+    def process_logs(self, request: EventPipelineRequest) -> EventPipelineResponse:
+        response = self.event_risk_pipeline.process(request)
+        self.event_repository.save_pipeline_response(response)
+        return response
+
+    def list_security_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.event_repository.list_security_events(limit=limit)
+
+    def list_incidents(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.event_repository.list_incidents(limit=limit)
+
+    def list_risk_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.event_repository.list_risk_events(limit=limit)
+
+    def list_risk_assessments(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.event_repository.list_risk_assessments(limit=limit)
+
+    def get_event_storage_summary(self) -> Dict[str, int | str]:
+        return self.event_repository.get_summary()
+
+    def process_full_pipeline(self, request: EventPipelineRequest) -> FullPipelineResponse:
+        response = self.event_risk_pipeline.process_full(request)
+        self.event_repository.save_full_pipeline_response(response)
+        return response
 
     def train(self, request: TrainingRequest) -> TrainingResponse:
         notes: List[str] = []
@@ -475,11 +513,48 @@ class AppContainer:
             permutation_importance=permutation_importance_records,
         )
 
+    def train_risk_event_classifier(
+        self,
+        request: RiskEventClassifierTrainingRequest,
+    ) -> RiskEventClassifierTrainingResponse:
+        return self.event_risk_pipeline.risk_event_classifier.train(
+            samples=request.samples,
+            model_type=request.model_type,
+            save_model=request.save_model,
+        )
+
+    def train_risk_event_classifier_flat(
+        self,
+        request: RiskEventClassifierFlatTrainingRequest,
+    ) -> RiskEventClassifierTrainingResponse:
+        return self.event_risk_pipeline.risk_event_classifier.train_flat(
+            samples=request.samples,
+            model_type=request.model_type,
+            save_model=request.save_model,
+        )
+
+    def train_risk_event_classifier_from_file(
+        self,
+        filename: str,
+        content: bytes,
+        model_type: str = "random_forest",
+        save_model: bool = True,
+    ) -> RiskEventClassifierTrainingResponse:
+        samples = self.risk_event_training_importer.parse_file(
+            filename=filename,
+            content=content,
+        )
+
+        return self.event_risk_pipeline.risk_event_classifier.train_flat(
+            samples=samples,
+            model_type=model_type,
+            save_model=save_model,
+        )
 
     @staticmethod
     def _labels_for_events(
-        events: Sequence[SecurityEvent],
-        labels: Dict[str, int],
+            events: Sequence[SecurityEvent],
+            labels: Dict[str, int],
     ) -> np.ndarray:
         missing = [event.event_id for event in events if event.event_id not in labels]
         if missing:
@@ -530,7 +605,6 @@ class AppContainer:
             "logloss_before": metrics.logloss_before,
             "logloss_after": metrics.logloss_after,
         }
-
 
     def assess(self, request: RiskAssessmentRequest) -> RiskAssessmentResponse:
         if not self.is_trained or self.risk_model is None:
@@ -603,12 +677,12 @@ class AppContainer:
         return self.risk_engine.get_thresholds()
 
     def _update_importance_tables(
-        self,
-        x_reference: pd.DataFrame | np.ndarray,
-        y_reference: pd.Series | np.ndarray,
-        compute_permutation: bool = True,
-        permutation_scoring: str = "f1",
-        permutation_n_repeats: int = 10,
+            self,
+            x_reference: pd.DataFrame | np.ndarray,
+            y_reference: pd.Series | np.ndarray,
+            compute_permutation: bool = True,
+            permutation_scoring: str = "f1",
+            permutation_n_repeats: int = 10,
     ) -> None:
         if self.risk_model is None:
             self.feature_importance_table = None
@@ -645,8 +719,8 @@ class AppContainer:
 
     @staticmethod
     def _importance_to_records(
-        importance_table: Optional[pd.DataFrame],
-        top_k: int = 15,
+            importance_table: Optional[pd.DataFrame],
+            top_k: int = 15,
     ) -> List[Dict[str, Any]]:
         if importance_table is None or importance_table.empty:
             return []
@@ -712,6 +786,9 @@ class AppContainer:
 
         return {node.node_id: explanation_items for node in nodes}
 
+    def list_control_recommendations(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.event_repository.list_control_recommendations(limit=limit)
+
 container = AppContainer()
 
 app = FastAPI(
@@ -727,6 +804,46 @@ app.mount("/static", StaticFiles(directory=str(settings.paths.static_dir)), name
 @app.get("/health")
 def healthcheck() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/process-logs", response_model=EventPipelineResponse)
+def process_logs(request: EventPipelineRequest) -> EventPipelineResponse:
+    try:
+        return container.process_logs(request)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/security-events")
+def list_security_events(limit: int = 100) -> List[Dict[str, Any]]:
+    try:
+        return container.list_security_events(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/incidents")
+def list_incidents(limit: int = 100) -> List[Dict[str, Any]]:
+    try:
+        return container.list_incidents(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/risk-events")
+def list_risk_events(limit: int = 100) -> List[Dict[str, Any]]:
+    try:
+        return container.list_risk_events(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/event-storage-summary")
+def get_event_storage_summary() -> Dict[str, int | str]:
+    try:
+        return container.get_event_storage_summary()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/train", response_model=TrainingResponse)
@@ -772,3 +889,64 @@ def get_thresholds() -> Dict[str, float | str]:
 def get_model_importance() -> Dict[str, Any]:
     return container.get_importance_response()
 
+
+@app.post("/pipeline/full", response_model=FullPipelineResponse)
+def process_full_pipeline(request: EventPipelineRequest) -> FullPipelineResponse:
+    try:
+        return container.process_full_pipeline(request)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/risk-assessments")
+def list_risk_assessments(limit: int = 100) -> List[Dict[str, Any]]:
+    try:
+        return container.list_risk_assessments(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/risk-event-classifier/train", response_model=RiskEventClassifierTrainingResponse)
+def train_risk_event_classifier(
+    request: RiskEventClassifierTrainingRequest,
+) -> RiskEventClassifierTrainingResponse:
+    try:
+        return container.train_risk_event_classifier(request)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/risk-event-classifier/train-flat", response_model=RiskEventClassifierTrainingResponse)
+def train_risk_event_classifier_flat(
+    request: RiskEventClassifierFlatTrainingRequest,
+) -> RiskEventClassifierTrainingResponse:
+    try:
+        return container.train_risk_event_classifier_flat(request)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/risk-event-classifier/train-file", response_model=RiskEventClassifierTrainingResponse)
+async def train_risk_event_classifier_from_file(
+    file: UploadFile = File(...),
+    model_type: str = Form("random_forest"),
+    save_model: bool = Form(True),
+) -> RiskEventClassifierTrainingResponse:
+    try:
+        content = await file.read()
+
+        return container.train_risk_event_classifier_from_file(
+            filename=file.filename or "training_dataset",
+            content=content,
+            model_type=model_type,
+            save_model=save_model,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@app.get("/control-recommendations")
+def list_control_recommendations(limit: int = 100) -> List[Dict[str, Any]]:
+    try:
+        return container.list_control_recommendations(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
