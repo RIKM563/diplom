@@ -30,7 +30,6 @@ class _MeasureCandidate:
         denominator = (
             self.measure.cost
             + self.measure.labor * 1_000.0
-            + self.measure.implementation_time * 500.0
         )
 
         if denominator <= 0:
@@ -46,7 +45,6 @@ class _SearchState:
     total_risk_reduction: float
     total_cost: float
     total_labor: float
-    total_time: float
 
 
 class EventRiskControlOptimizer:
@@ -113,7 +111,7 @@ class EventRiskControlOptimizer:
             constraints=constraints,
             explanation=[
                 "Подбор мер защиты выполнен после расчета и графового уточнения риска.",
-                "Цель подбора — максимизировать ожидаемое снижение расчетной оценки риска при ограничениях на бюджет, трудоемкость, срок внедрения и количество мер.",
+                "Цель подбора — максимизировать ожидаемое снижение расчетной оценки риска при ограничениях на бюджет, трудоемкость и количество мер.",
                 "Ожидаемый эффект меры рассчитывается для связанных событий риска реализации информационных угроз и не использует критичность объекта как отдельный множитель риска.",
             ],
         )
@@ -188,7 +186,6 @@ class EventRiskControlOptimizer:
             total_risk_reduction=0.0,
             total_cost=0.0,
             total_labor=0.0,
-            total_time=0.0,
         )
 
         initial = _SearchState(
@@ -197,7 +194,6 @@ class EventRiskControlOptimizer:
             total_risk_reduction=0.0,
             total_cost=0.0,
             total_labor=0.0,
-            total_time=0.0,
         )
 
         suffix_bound = self._build_suffix_bound(candidates)
@@ -228,7 +224,6 @@ class EventRiskControlOptimizer:
                     + candidate.expected_risk_reduction,
                     total_cost=state.total_cost + candidate.measure.cost,
                     total_labor=state.total_labor + candidate.measure.labor,
-                    total_time=state.total_time + candidate.measure.implementation_time,
                 )
                 search(index + 1, next_state)
 
@@ -263,9 +258,6 @@ class EventRiskControlOptimizer:
         if state.total_labor + measure.labor > constraints.max_labor:
             return False
 
-        if state.total_time + measure.implementation_time > constraints.max_implementation_time:
-            return False
-
         if any(item in state.selected_measure_ids for item in measure.incompatible_with):
             return False
 
@@ -283,9 +275,6 @@ class EventRiskControlOptimizer:
             return False
 
         if measure.labor > constraints.max_labor:
-            return False
-
-        if measure.implementation_time > constraints.max_implementation_time:
             return False
 
         return True

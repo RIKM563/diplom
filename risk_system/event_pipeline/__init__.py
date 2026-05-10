@@ -1,3 +1,4 @@
+from .bayesian_adjuster import BayesianRiskEventAdjuster
 from .graph_adjustment import GraphRiskAdjustmentEngine
 from .incident_classifier import IncidentClassifier
 from .normalizer import EventNormalizer
@@ -42,6 +43,7 @@ from .control_optimizer import EventRiskControlOptimizer
 
 __all__ = [
     "EventNormalizer",
+    "BayesianRiskEventAdjuster",
     "IncidentClassifier",
     "RiskEventClassifier",
     "RiskEventAssessmentEngine",

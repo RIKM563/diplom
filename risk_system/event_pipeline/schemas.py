@@ -327,7 +327,6 @@ class ControlMeasureCandidate(BaseModel):
 class ControlOptimizationConstraints(BaseModel):
     max_budget: float = Field(default=1_000_000.0, ge=0.0)
     max_labor: float = Field(default=200.0, ge=0.0)
-    max_implementation_time: float = Field(default=60.0, ge=0.0)
     max_measures: int = Field(default=5, ge=1)
     min_effectiveness: float = Field(default=0.03, ge=0.0, le=1.0)
 

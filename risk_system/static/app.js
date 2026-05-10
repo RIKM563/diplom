@@ -94,7 +94,6 @@ const pipelineSample = {
   optimization_constraints: {
     max_budget: 800000,
     max_labor: 120,
-    max_implementation_time: 45,
     max_measures: 3,
     min_effectiveness: 0.03
   }

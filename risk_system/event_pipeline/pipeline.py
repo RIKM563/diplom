@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .bayesian_adjuster import BayesianRiskEventAdjuster
 from .graph_adjustment import GraphRiskAdjustmentEngine
 from .incident_classifier import IncidentClassifier
 from .normalizer import EventNormalizer
@@ -19,6 +20,7 @@ class EventRiskPipeline:
         self.normalizer = EventNormalizer()
         self.incident_classifier = IncidentClassifier()
         self.risk_event_classifier = RiskEventClassifier()
+        self.bayesian_adjuster = BayesianRiskEventAdjuster()
         self.risk_assessment_engine = RiskEventAssessmentEngine()
         self.graph_adjustment_engine = GraphRiskAdjustmentEngine()
         self.control_optimizer = EventRiskControlOptimizer()
@@ -35,6 +37,7 @@ class EventRiskPipeline:
             incidents=incidents,
             threshold=request.risk_event_threshold,
         )
+        risk_events = self.bayesian_adjuster.adjust_many(risk_events)
 
         summary = PipelineSummary(
             logs_received=len(request.logs),
@@ -47,6 +50,7 @@ class EventRiskPipeline:
                 "stage_3": "Корреляция событий защиты информации по объекту, активу, субъекту и источнику",
                 "stage_4": "Выявление инцидентов защиты информации на основе формализованных экспертных правил",
                 "stage_5": "Отнесение инцидентов защиты информации к событиям риска реализации информационных угроз",
+                "stage_6": "Байесовское уточнение вероятностной составляющей с учетом зависимостей сценариев",
             },
         )
 
@@ -76,12 +80,12 @@ class EventRiskPipeline:
         )
 
         pipeline_response.summary.pipeline_stages[
-            "stage_6"
+            "stage_7"
         ] = "Расчетная оценка риска и графовое уточнение результата с учетом инфраструктурных связей"
 
         pipeline_response.summary.pipeline_stages[
-            "stage_7"
-        ] = "Подбор мер обработки риска при ограничениях на бюджет, трудоемкость и срок внедрения"
+            "stage_8"
+        ] = "Подбор мер обработки риска при ограничениях на бюджет и трудоемкость"
 
         return FullPipelineResponse(
             pipeline=pipeline_response,
